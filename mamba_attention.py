@@ -123,9 +123,10 @@ class MLLABlock(nn.Module):
         self.out_proj = nn.Linear(self.dim, c2)
 
     def forward(self, x):
-        B, H, W, C = x.shape
+        # input size must be batch_size, channl, high, weigh
+        B, C, H, W = x.shape
 
-        x = x + self.cpe1(x.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+        x = (x + self.cpe1(x)).permute(0, 2, 3, 1)  # B H W C
 
         x = self.norm1(x)
         act_res = self.act(self.act_proj(x))
@@ -135,7 +136,7 @@ class MLLABlock(nn.Module):
         # Linear Attention  replace SSM with Attention
         attn = LinearAttention(dim=self.dim, input_resolution=(H, W), num_heads=self.num_heads, qkv_bias=self.qkv_bias)
         x = attn(x).reshape(B, H, W, C)
-        x = self.out_proj(x * act_res)
+        x = self.out_proj(x * act_res).permute(0, 3, 1, 2)
         return x
 
 
