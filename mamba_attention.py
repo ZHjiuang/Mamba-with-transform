@@ -18,24 +18,24 @@ class RoPE(torch.nn.Module):
 
     def __init__(self, shape, base=10000):
         super(RoPE, self).__init__()
+        self.base = base
 
+    def forward(self, x):
         channel_dims, feature_dim = shape[:-1], shape[-1]
         k_max = feature_dim // (2 * len(channel_dims))
 
         assert feature_dim % k_max == 0
 
         # angles
-        theta_ks = 1 / (base ** (torch.arange(k_max) / k_max))
+        theta_ks = 1 / (self.base ** (torch.arange(k_max) / k_max))
         angles = torch.cat([t.unsqueeze(-1) * theta_ks for t in
                             torch.meshgrid([torch.arange(d) for d in channel_dims], indexing='ij')], dim=-1)
 
         # rotation
         rotations_re = torch.cos(angles).unsqueeze(dim=-1)
         rotations_im = torch.sin(angles).unsqueeze(dim=-1)
-        rotations = torch.cat([rotations_re, rotations_im], dim=-1)
-        self.register_buffer('rotations', rotations)
-
-    def forward(self, x):
+        rotations = torch.cat([rotations_re, rotations_im], dim=-1).to(x.device)
+        
         if x.dtype != torch.float32:
             x = x.to(torch.float32)
         x = torch.view_as_complex(x.reshape(*x.shape[:-1], -1, 2))
@@ -60,7 +60,7 @@ class LinearAttention(nn.Module):
         self.qk = nn.Linear(dim, dim * 2, bias=qkv_bias)
         self.elu = nn.ELU()
         self.lepe = nn.Conv2d(dim, dim, 3, padding=1, groups=dim)
-        self.rope = RoPE(shape=(input_resolution[0], input_resolution[1], dim))
+        self.rope = RoPE(dim)
 
     def forward(self, x):
         """
@@ -78,11 +78,15 @@ class LinearAttention(nn.Module):
 
         q = self.elu(q) + 1.0
         k = self.elu(k) + 1.0
-        q_rope = self.rope(q.reshape(b, h, w, c)).reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)
-        k_rope = self.rope(k.reshape(b, h, w, c)).reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)
+        q_rope = self.rope(q.reshape(b, h, w, c), (h, w, c)).reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)
+        k_rope = self.rope(k.reshape(b, h, w, c), (h, w, c)).reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)
         q = q.reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)
         k = k.reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)
         v = v.reshape(b, n, num_heads, head_dim).permute(0, 2, 1, 3)
+
+        if q_rope.dtype != q.dtype:
+            q_rope = q_rope.half()
+            k_rope = k_rope.half()
 
         z = 1 / (q @ k.mean(dim=-2, keepdim=True).transpose(-2, -1) + 1e-6)
         kv = (k_rope.transpose(-2, -1) * (n ** -0.5)) @ (v * (n ** -0.5))
@@ -119,6 +123,7 @@ class MLLABlock(nn.Module):
         self.in_proj = nn.Linear(self.dim, self.dim)
         self.act_proj = nn.Linear(self.dim, self.dim)
         self.dwc = nn.Conv2d(self.dim, self.dim, 3, padding=1, groups=self.dim)
+        self.attn = LinearAttention(dim=self.dim, num_heads=self.num_heads, qkv_bias=self.qkv_bias)
         self.act = nn.SiLU()
         self.out_proj = nn.Linear(self.dim, c2)
 
@@ -134,8 +139,7 @@ class MLLABlock(nn.Module):
         x = self.act(self.dwc(x.permute(0, 3, 1, 2))).permute(0, 2, 3, 1)
 
         # Linear Attention  replace SSM with Attention
-        attn = LinearAttention(dim=self.dim, input_resolution=(H, W), num_heads=self.num_heads, qkv_bias=self.qkv_bias)
-        x = attn(x).reshape(B, H, W, C)
+        x = self.attn(x).reshape(B, H, W, C)
         x = self.out_proj(x * act_res).permute(0, 3, 1, 2)
         return x
 
