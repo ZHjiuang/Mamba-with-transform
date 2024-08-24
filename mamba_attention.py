@@ -52,10 +52,9 @@ class LinearAttention(nn.Module):
         qkv_bias (bool, optional):  If True, add a learnable bias to query, key, value. Default: True
     """
 
-    def __init__(self, dim, input_resolution, num_heads, qkv_bias=True):
+    def __init__(self, dim, num_heads, qkv_bias=True):
         super().__init__()
         self.dim = dim
-        self.input_resolution = input_resolution
         self.num_heads = num_heads
         self.qk = nn.Linear(dim, dim * 2, bias=qkv_bias)
         self.elu = nn.ELU()
@@ -107,7 +106,6 @@ class MLLABlock(nn.Module):
 
     Args:
         dim (int): Number of input channels.
-        input_resolution (tuple[int]): Input resulotion.
         num_heads (int): Number of attention heads.
         qkv_bias (bool, optional): If True, add a learnable bias to query, key, value. Default: True
         norm_layer (nn.Module, optional): Normalization layer.  Default: nn.LayerNorm
