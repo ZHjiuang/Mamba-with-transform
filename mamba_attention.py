@@ -16,11 +16,11 @@ class RoPE(torch.nn.Module):
     r"""Rotary Positional Embedding.
     """
 
-    def __init__(self, shape, base=10000):
+    def __init__(self, base=10000):
         super(RoPE, self).__init__()
         self.base = base
 
-    def forward(self, x):
+    def forward(self, x, shape):
         channel_dims, feature_dim = shape[:-1], shape[-1]
         k_max = feature_dim // (2 * len(channel_dims))
 
