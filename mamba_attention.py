@@ -39,7 +39,7 @@ class RoPE(torch.nn.Module):
         if x.dtype != torch.float32:
             x = x.to(torch.float32)
         x = torch.view_as_complex(x.reshape(*x.shape[:-1], -1, 2))
-        pe_x = torch.view_as_complex(self.rotations) * x
+        pe_x = torch.view_as_complex(rotations) * x
         return torch.view_as_real(pe_x).flatten(-2)
 
 
